@@ -1,0 +1,22 @@
+# 技能管理器（Skill Manager）。
+#
+# 默认只读：不加 marketUrl 时市场那一栏显示「未配置」，不影响本地管理功能。
+# roots 用来追加自定义技能根（rank 300，排在项目根之后、用户根之前）。
+- insert:
+    - id: skill-manager
+      name: 'dsh-plugin-skill-manager'
+      config:
+        enabled: true
+        # 自研技能市场地址（HTTPS，见 README 的协议一节）。留空即不启用市场。
+        marketUrl: ''
+        marketToken: ''
+        # 包体默认只允许从 marketUrl 自己的 origin 下载；跨源分发才在这里列出额外 origin。
+        marketAllowedOrigins: []
+        # 额外技能根；id 用于界面分组，path 支持 ~ 与 %VAR%。
+        roots: []
+        # 留空则用 $DSH_HOME / ~/.dsh 与 $DSH_AGENTS_HOME / ~/.agents
+        dshHome: ''
+        agentsHome: ''
+        includeDefaultRoots: true
+        requestTimeoutMs: 20000
+        maxBundleBytes: 20971520

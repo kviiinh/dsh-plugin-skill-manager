@@ -1,0 +1,19 @@
+# 依赖（由 pnpm 还原；`@deepseek-ai/schemastery` 是唯一的运行期依赖）
+node_modules/
+
+# 本地环境与编辑器产物
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+
+# 本机临时 / 备份产物
+*.bak
+*.bak-*
+.cache/
+
+# pnpm 本地仓库与覆盖率产物
+.pnpm-store/
+coverage/
+*.tmp

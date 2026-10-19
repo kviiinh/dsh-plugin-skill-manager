@@ -1,0 +1,45 @@
+{
+  "name": "dsh-plugin-skill-manager",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DSH 技能管理器：按扫描根分类查看/管理本地技能，从技能市场搜索安装到指定技能根，支持 /skill/<技能> 直接调用。",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./lib/*": "./lib/*"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "lib/",
+    "tools/",
+    "README.md",
+    "LICENSE",
+    "test/"
+  ],
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.4"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "devDependencies": {
+    "jsdom": "^30.1.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  }
+}

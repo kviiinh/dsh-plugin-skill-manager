@@ -1482,6 +1482,7 @@ test('卡片名：一行省略；没被截断不出气泡，被截断才用 DSH 
     assert.match(tipStyle, /position:\s*fixed/, '气泡 fixed 才不会被卡片裁掉')
     assert.match(tipStyle, /var\(--dsw-alias-tooltip-bg/, '气泡走 DSH 的 tooltip 底色')
     assert.match(tipStyle, /pointer-events:\s*none/)
+    assert.match(tipStyle, /max-width:\s*50vw/, '名字气泡保持默认宽度（只有卡片介绍收窄）')
     // 移开就收起。
     name.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true, relatedTarget: null }))
     await squeezed.settle()
@@ -1602,6 +1603,8 @@ test('介绍显示不全时，悬浮才给 DSH 风格的气泡提示', async (t)
     assert.match(style, /position:\s*fixed/, '气泡用 fixed，才不会被卡片的 overflow 裁掉')
     assert.match(style, /var\(--dsw-alias-tooltip-bg/, '气泡底色用 DSH 的 tooltip token')
     assert.match(style, /pointer-events:\s*none/, '气泡不吃鼠标事件')
+    // 宽度：卡片介绍的气泡只有默认（50vw）的一半——25vw（用户指定）。
+    assert.match(style, /max-width:\s*25vw/, '卡片介绍的气泡宽度要收窄到默认的一半')
     // 鼠标移开就收起。
     desc.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true, relatedTarget: null }))
     await clipped.settle()
@@ -1646,7 +1649,7 @@ test('靠右/靠底的卡片：介绍气泡会被夹回视口内', async (t) => 
     assert.match(style, /left:\s*816px/, '气泡左边要被夹到视口内')
     // 触发元素的 bottom = 200 + 60 = 260，气泡贴在下方 6px 处。
     assert.match(style, /top:\s*266px/, '下方放得下就显示在下方（260+6）')
-    assert.match(style, /max-width:\s*50vw/, '宽度上限照 DSH 的 50vw')
+    assert.match(style, /max-width:\s*25vw/, '卡片介绍气泡的宽度上限是默认的一半（25vw）')
   } finally {
     await right.dispose()
   }

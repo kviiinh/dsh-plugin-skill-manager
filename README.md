@@ -43,7 +43,8 @@ DSH 的技能管理器：把散在六个扫描根里的技能**按技能目录�
 4. 分割线以下**全是技能介绍**（最多 7 行 = 7 × 18px 显式 `max-height`；只靠
    `-webkit-line-clamp` 在 flex 子项里 Chrome 不按它截断，会露出半行字）。
    **只有显示不全时**悬浮才出气泡显示完整介绍，气泡照 DSH 的 `Tooltip`（`_bubble_12mhf_1`）：
-   `--dsw-alias-tooltip-bg` 深底 + 反白字、13/20、小圆角、`max-width:50vw`、
+   `--dsw-alias-tooltip-bg` 深底 + 反白字、13/20、小圆角、**`max-width:25vw`**
+   （默认气泡是 `50vw`，介绍这个按用户要求收窄成一半）、
    `position:fixed`（卡片有 `overflow:hidden`，fixed 才不会被裁掉）、`pointer-events:none`；
    出现后会量一次自身尺寸，**把坐标夹进视口**：靠右一列的卡片不会把气泡顶出右边，
    下方放不下时自动翻到触发元素上方（`clampTipPosition`）；

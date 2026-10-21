@@ -1290,6 +1290,8 @@ window.__ModuleLoader__.load({
             ref: bubbleRef,
             style: {
               ...styles.tipBubble,
+              // 个别气泡可以覆盖尺寸（例如卡片介绍的气泡只有默认宽度的一半）。
+              ...props.bubbleStyle || {},
               left: `${(pos || { left: Math.max(8, anchor.x) }).left}px`,
               top: `${(pos || { top: anchor.y }).top}px`,
             },
@@ -1311,6 +1313,8 @@ window.__ModuleLoader__.load({
         probe: isVerticallyClipped,
         style: styles.cardDesc,
         tipKey: 'desc',
+        // 用户要求：卡片介绍的气泡宽度缩到默认的一半（50vw → 25vw）。
+        bubbleStyle: { maxWidth: '25vw' },
         attrs: { 'data-sm-card-desc': '1' },
       })
     }

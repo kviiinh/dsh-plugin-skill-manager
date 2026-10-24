@@ -6,6 +6,7 @@
 
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { cleanup, makeTemp, writeBundleSkill } from './helpers.mjs'
@@ -393,6 +394,32 @@ test('moveSkill：目标已存在就拒绝；同根不动；只读根拒绝', ()
     assert.equal(readonly.ok, false)
     assert.match(readonly.error, /不可写/)
   } finally {
+    cleanup(temp)
+  }
+})
+
+test('删除时目录被占用，要给出可读的中文提示而不是裸 EPERM/EBUSY', { skip: process.platform !== 'win32' ? '只有 Windows 会锁住被其他进程当作工作目录的目录' : false }, async () => {
+  const temp = makeTemp()
+  let holder
+  try {
+    const { root, skill, managerRoot } = fixture(temp)
+    // 让子进程把这个技能目录当成工作目录：Windows 上它就不再允许被 rename（EBUSY），
+    // 与"文件资源管理器正打开着这个目录"是同一类占用。
+    holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { cwd: join(root.path, 'demo-skill'), stdio: 'ignore' })
+    await new Promise((resolve) => holder.once('spawn', resolve))
+
+    const removed = trashSkill({ root, skill, managerRoot })
+    assert.equal(removed.ok, false, '目录被占用时删除应该失败')
+    assert.equal(removed.code, 'move-failed')
+    assert.match(removed.error, /正被其他程序占用/, `提示要说清是"被占用"：${removed.error}`)
+    assert.match(removed.error, /EBUSY|EPERM/, '错误码要保留，方便排查')
+    assert.equal(existsSync(join(root.path, 'demo-skill', 'SKILL.md')), true, '失败后技能必须还在原地')
+  } finally {
+    if (holder) {
+      const exited = holder.exitCode !== null ? Promise.resolve() : new Promise((resolve) => holder.once('exit', resolve))
+      holder.kill()
+      await exited
+    }
     cleanup(temp)
   }
 })

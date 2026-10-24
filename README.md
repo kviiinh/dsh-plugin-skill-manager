@@ -416,14 +416,14 @@ frontmatter 的 `name` 必须合法、目标必须落在技能根内、先复制
 
 ```powershell
 pnpm install                      # 装 @deepseek-ai/schemastery 与渲染测试用的 devDependencies
-node --test "test/*.test.mjs"     # 139 条
+node --test "test/*.test.mjs"     # 140 条
 ```
 
 | 文件 | 条数 | 覆盖 |
 |---|---|---|
 | `frontmatter.test.mjs` | 18 | YAML 子集解析与改写（注释、EOL、开关字段、分类缩进/嵌套） |
 | `roots.test.mjs` | 7 | 六个扫描根、扫描、与 DSH 注册表对账、遮蔽推算 |
-| `actions.test.mjs` | 15 | 开关/改名/复制/回收站/新建、分类写盘、移动目录、路径安全、**覆盖导入不丢数据** |
+| `actions.test.mjs` | 16 | 开关/改名/复制/回收站/新建、分类写盘、移动目录、路径安全、**覆盖导入不丢数据**、**目录被占用时给可读提示** |
 | `targz.test.mjs` | 10 | tar.gz 解析与生成（真实 `tar`、目录条目、中文名、pax、长名） |
 | `market.test.mjs` | 25 | manifest 校验、逐文件摘要、SSRF/逐跳白名单、幂等、篡改检测、端到端 |
 | `gesture.test.mjs` | 8 | `/skill/<技能>` 与两级 `/skill/<目录>/<技能>` 手势 |
@@ -431,7 +431,7 @@ node --test "test/*.test.mjs"     # 139 条
 | `client.test.mjs` | 1 | 客户端 bundle 装配 |
 | `client-render.test.mjs` | 37 | jsdom + react-dom **真渲染**（见下） |
 | `slash-source.test.mjs` | 4 | `/skill` 提示源的注册时机（服务早/晚就绪、注册抛错、服务缺失） |
-| | **139** | |
+| | **140** | |
 
 用例覆盖的重点是**失败路径**：路径穿越、`././` 归一化碰撞、NTFS ADS / Kelvin 符号 /
 大小写 / 硬链接别名、符号链接与 junction 逃逸、归档重复路径、坏 checksum、摘要/大小不符、
@@ -475,7 +475,7 @@ lib/
 tools/
   install-into-profile.mjs   装进 profile / --uninstall / --dry-run
   market-server.mjs          参考市场服务器
-  test/               139 条用例（含 jsdom 真渲染、真实 tar、真实 HTTP、跨进程）
+  test/               140 条用例（含 jsdom 真渲染、真实 tar、真实 HTTP、跨进程）
 cordis.patch.yml    发行用的配置（marketUrl 默认空 = 市场关闭）
 ```
 

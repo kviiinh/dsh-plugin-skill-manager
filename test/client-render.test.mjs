@@ -255,6 +255,19 @@ async function renderPanel(options = {}) {
     if (init && init.body && String(route).includes('/skill-manager/action')) {
       const body = JSON.parse(init.body)
       actions.push(body)
+      // `purgeFailed`：模拟"有条目被别的程序占着、只删掉一部分"——宿主不整批失败，
+      // 而是回 `{ok: true, purged, failed}`，界面要说明情况而不是甩一行裸 EPERM。
+      if (body.action === 'purge' && options.purgeFailed) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            purged: 0,
+            failed: [{ id: 't1', name: 'deleted-skill', error: '该技能目录正被其他程序占用（EPERM）' }],
+          }),
+        }
+      }
       if (body.action === 'import') {
         imports.push(body)
         if (options.importError) {
@@ -1259,6 +1272,36 @@ test('回收站：行样式跟 DSH 一致，三个按钮是 红/白/红，危险
     await rendered.clickElement(emptyButton)
     assert.match(container.innerHTML, /清空回收站/, '确认框标题就是清空回收站')
     assert.match(container.innerHTML, /无法恢复/)
+  } finally {
+    await rendered.dispose()
+  }
+})
+
+test('回收站：有条目被占用时用黄字说明"删了几个、哪几个没删掉"，不把裸 EPERM 甩给用户', async (t) => {
+  const rendered = await renderPanel({ primitives: true, purgeFailed: true })
+  if (!rendered) {
+    t.skip('未安装 react / react-dom / jsdom')
+    return
+  }
+  try {
+    await rendered.click('回收站')
+    const container = rendered.container
+    const emptyButton = [...container.querySelectorAll('button')].find((item) => item.textContent === '清空回收站')
+    assert.ok(emptyButton, '找不到清空回收站按钮')
+    await rendered.clickElement(emptyButton)
+    const confirmButton = [...container.querySelectorAll('[data-ui="modal"] button')]
+      .find((item) => item.textContent === '清空回收站')
+    await rendered.clickElement(confirmButton)
+
+    const notice = container.querySelector('[data-sm-trash-message]')
+    assert.ok(notice, '部分失败也要有提示')
+    assert.equal(notice.getAttribute('data-sm-trash-message'), 'warn', '部分成功用黄字，不是红字')
+    assert.match(notice.textContent, /已删除 0 个/, `要说清删掉几个：${notice.textContent}`)
+    assert.match(notice.textContent, /1 个正被其他程序占用/, `要说清没删掉几个：${notice.textContent}`)
+    assert.match(notice.textContent, /deleted-skill/, '要说清是哪几条没删掉')
+    assert.equal(notice.textContent.includes('EPERM'), false, '不能把裸错误码甩给用户')
+    // 删不掉的条目还留在回收站列表里，等用户重试。
+    assert.ok(container.querySelector('[data-trash-row="deleted-skill"]'), '没删掉的条目要留在列表里')
   } finally {
     await rendered.dispose()
   }

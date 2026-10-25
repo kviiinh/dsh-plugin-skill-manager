@@ -322,6 +322,7 @@ window.__ModuleLoader__.load({
       restore: '还原',
       purge: '彻底删除',
       purgeAll: '清空回收站',
+      purgePartial: '已删除 {done} 个；{failed} 个正被其他程序占用，没能删掉（{names}），可稍后重试。',
       actionFailed: '操作失败',
       done: '完成',
       warnings: '警告',
@@ -439,6 +440,7 @@ window.__ModuleLoader__.load({
       restore: 'Restore',
       purge: 'Delete forever',
       purgeAll: 'Empty trash',
+      purgePartial: 'Deleted {done}; {failed} could not be deleted because another program is using them ({names}). Try again later.',
       actionFailed: 'Action failed',
       done: 'Done',
       warnings: 'Warnings',
@@ -2594,7 +2596,8 @@ window.__ModuleLoader__.load({
     function TrashTab(props) {
       const catalog = props.catalog
       const [busy, setBusy] = React.useState(false)
-      const [message, setMessage] = React.useState('')
+      // 提示带色调：真失败用红字，部分成功（有条目被占用没删掉）用黄字。
+      const [message, setMessage] = React.useState(undefined)
       // 待确认的危险操作：`{ kind: 'all' }` 或 `{ kind: 'one', item }`。
       const [pending, setPending] = React.useState(undefined)
       const trash = catalog.trash || []
@@ -2602,13 +2605,26 @@ window.__ModuleLoader__.load({
 
       const run = async (body) => {
         setBusy(true)
-        setMessage('')
+        setMessage(undefined)
         try {
           const result = await call(ROUTE.action, { method: 'POST', body: { ...body, cwd: props.cwd } })
           if (!result.ok) throw new Error(result.error || 'action failed')
           props.onRefresh()
+          // 宿主是"一条一条删、删不掉的留在台账里"，所以这里不是全有或全无：
+          // 删掉的已经没了，没删掉的还在列表里等重试，把情况说清楚就行。
+          const failed = Array.isArray(result.failed) ? result.failed : []
+          if (failed.length) {
+            const names = failed.slice(0, 3).map((item) => item.name || item.id).join('、')
+            setMessage({
+              tone: 'warn',
+              text: t('purgePartial')
+                .replace('{done}', String(result.purged ?? 0))
+                .replace('{failed}', String(failed.length))
+                .replace('{names}', names),
+            })
+          }
         } catch (error) {
-          setMessage(String(error.message || error))
+          setMessage({ tone: 'error', text: String(error.message || error) })
         } finally {
           setBusy(false)
         }
@@ -2634,7 +2650,7 @@ window.__ModuleLoader__.load({
               disabled: busy,
             }, t('purgeAll'))
             : null),
-        message ? h('div', { style: styles.error }, message) : null,
+        message ? h('div', { style: message.tone === 'warn' ? styles.warn : styles.error, 'data-sm-trash-message': message.tone }, message.text) : null,
         trash.length === 0
           ? h('div', { style: styles.muted }, t('trashEmpty'))
           : h('ul', { style: styles.trashList }, trash.map((item) => h('li', { key: item.id, style: styles.trashRow, 'data-trash-row': item.name },

@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { cleanup, makeTemp, writeBundleSkill } from './helpers.mjs'
 import { createSkill, copySkill, listTrash, moveSkill, purgeTrash, renameSkill, replaceSkillDirectory, restoreTrash, setCategories, setInvocation, trashSkill } from '../lib/actions.js'
@@ -414,6 +414,76 @@ test('删除时目录被占用，要给出可读的中文提示而不是裸 EPER
     assert.match(removed.error, /正被其他程序占用/, `提示要说清是"被占用"：${removed.error}`)
     assert.match(removed.error, /EBUSY|EPERM/, '错误码要保留，方便排查')
     assert.equal(existsSync(join(root.path, 'demo-skill', 'SKILL.md')), true, '失败后技能必须还在原地')
+  } finally {
+    if (holder) {
+      const exited = holder.exitCode !== null ? Promise.resolve() : new Promise((resolve) => holder.once('exit', resolve))
+      holder.kill()
+      await exited
+    }
+    cleanup(temp)
+  }
+})
+
+test('清空回收站：目录已不存在的陈旧台账条目顺手清掉，不留点不动的幽灵行', () => {
+  const temp = makeTemp()
+  try {
+    const { root, skill, managerRoot } = fixture(temp)
+    const removed = trashSkill({ root, skill, managerRoot })
+    assert.equal(removed.ok, true, removed.error)
+    // 模拟"目录已经被手工删掉、台账还没同步"：这种行在界面上点还原/彻底删除都没辙。
+    rmSync(join(managerRoot, 'trash', removed.id), { recursive: true, force: true })
+
+    const result = purgeTrash({ managerRoot })
+    assert.equal(result.ok, true, result.error)
+    assert.equal(result.purged, 1, '幽灵条目也算清掉了')
+    assert.deepEqual(result.failed, [])
+    assert.equal(listTrash(managerRoot).length, 0, '台账要一起清干净')
+  } finally {
+    cleanup(temp)
+  }
+})
+
+test('清空回收站：被占用的条目跳过并留在台账，其余照删（一条失败不连坐）', { skip: process.platform !== 'win32' ? '只有 Windows 会锁住被其他进程当作工作目录的目录' : false }, async () => {
+  const temp = makeTemp()
+  let holder
+  try {
+    const { managerRoot } = fixture(temp)
+    const trashRoot = join(managerRoot, 'trash')
+    const entry = (id, name) => ({
+      id,
+      name,
+      dirName: name,
+      kind: 'bundle',
+      from: join(temp, 'skills', name, 'SKILL.md'),
+      rootId: 'user-agents',
+      at: '2026-01-01T00:00:00.000Z',
+    })
+    // 一条被占用：子进程把它当工作目录，Windows 就不允许删它。
+    mkdirSync(join(trashRoot, 'locked-entry', 'inner'), { recursive: true })
+    writeFileSync(join(trashRoot, 'locked-entry', 'inner', 'note.md'), 'x', 'utf8')
+    // 一条正常的 + 一条目录早就不在了的陈旧行。
+    mkdirSync(join(trashRoot, 'plain-entry'), { recursive: true })
+    writeFileSync(join(trashRoot, 'plain-entry', 'SKILL.md'), '---\nname: plain\n---\n', 'utf8')
+    writeFileSync(
+      join(trashRoot, 'index.json'),
+      JSON.stringify([entry('locked-entry', 'locked'), entry('plain-entry', 'plain'), entry('ghost-entry', 'ghost')]),
+      'utf8',
+    )
+
+    holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { cwd: join(trashRoot, 'locked-entry', 'inner'), stdio: 'ignore' })
+    await new Promise((resolve) => holder.once('spawn', resolve))
+
+    const result = purgeTrash({ managerRoot })
+    assert.equal(result.ok, true, '单条删不掉不该整批失败')
+    assert.equal(result.purged, 2, `正常的 + 陈旧的都要清掉：${JSON.stringify(result)}`)
+    assert.equal(result.failed.length, 1)
+    assert.equal(result.failed[0].id, 'locked-entry')
+    assert.equal(result.failed[0].name, 'locked')
+    assert.match(result.failed[0].error, /正被其他程序占用/, `要说清是被占用：${result.failed[0].error}`)
+    assert.match(result.failed[0].error, /EBUSY|EPERM/, '错误码要保留，方便排查')
+    assert.equal(existsSync(join(trashRoot, 'plain-entry')), false, '正常条目要真删掉')
+    assert.equal(existsSync(join(trashRoot, 'locked-entry')), true, '被占用的条目要原地保留')
+    assert.deepEqual(listTrash(managerRoot).map((item) => item.id), ['locked-entry'], '台账只留删不掉的那条')
   } finally {
     if (holder) {
       const exited = holder.exitCode !== null ? Promise.resolve() : new Promise((resolve) => holder.once('exit', resolve))

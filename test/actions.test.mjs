@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { cleanup, makeTemp, writeBundleSkill } from './helpers.mjs'
 import { createSkill, copySkill, listTrash, moveSkill, purgeTrash, renameSkill, replaceSkillDirectory, restoreTrash, setCategories, setInvocation, trashSkill } from '../lib/actions.js'
@@ -86,7 +86,7 @@ test('rename 目标被占时不能留下"名字改了、目录没动"的半成�
   }
 })
 
-test('回收站：删除 → 撤销 → 清空', () => {
+test('回收站：删除 → 撤销 → 清空', async () => {
   const temp = makeTemp()
   try {
     const { root, skill, managerRoot } = fixture(temp)
@@ -102,7 +102,7 @@ test('回收站：删除 → 撤销 → 清空', () => {
 
     const again = trashSkill({ root, skill, managerRoot })
     assert.equal(again.ok, true)
-    const purged = purgeTrash({ managerRoot })
+    const purged = await purgeTrash({ managerRoot })
     assert.equal(purged.ok, true)
     assert.equal(purged.purged, 1)
     assert.equal(listTrash(managerRoot).length, 0)
@@ -424,7 +424,7 @@ test('删除时目录被占用，要给出可读的中文提示而不是裸 EPER
   }
 })
 
-test('清空回收站：目录已不存在的陈旧台账条目顺手清掉，不留点不动的幽灵行', () => {
+test('清空回收站：目录已不存在的陈旧台账条目顺手清掉，不留点不动的幽灵行', async () => {
   const temp = makeTemp()
   try {
     const { root, skill, managerRoot } = fixture(temp)
@@ -433,7 +433,7 @@ test('清空回收站：目录已不存在的陈旧台账条目顺手清掉，�
     // 模拟"目录已经被手工删掉、台账还没同步"：这种行在界面上点还原/彻底删除都没辙。
     rmSync(join(managerRoot, 'trash', removed.id), { recursive: true, force: true })
 
-    const result = purgeTrash({ managerRoot })
+    const result = await purgeTrash({ managerRoot })
     assert.equal(result.ok, true, result.error)
     assert.equal(result.purged, 1, '幽灵条目也算清掉了')
     assert.deepEqual(result.failed, [])
@@ -473,7 +473,7 @@ test('清空回收站：被占用的条目跳过并留在台账，其余照删�
     holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { cwd: join(trashRoot, 'locked-entry', 'inner'), stdio: 'ignore' })
     await new Promise((resolve) => holder.once('spawn', resolve))
 
-    const result = purgeTrash({ managerRoot })
+    const result = await purgeTrash({ managerRoot, retryDelays: [10, 20] })
     assert.equal(result.ok, true, '单条删不掉不该整批失败')
     assert.equal(result.purged, 2, `正常的 + 陈旧的都要清掉：${JSON.stringify(result)}`)
     assert.equal(result.failed.length, 1)
@@ -484,12 +484,81 @@ test('清空回收站：被占用的条目跳过并留在台账，其余照删�
     assert.equal(existsSync(join(trashRoot, 'plain-entry')), false, '正常条目要真删掉')
     assert.equal(existsSync(join(trashRoot, 'locked-entry')), true, '被占用的条目要原地保留')
     assert.deepEqual(listTrash(managerRoot).map((item) => item.id), ['locked-entry'], '台账只留删不掉的那条')
+    // 界面上只说"被占用"，真正的失败路径要落进 delete.log，便于以后排查。
+    const log = readFileSync(join(managerRoot, 'delete.log'), 'utf8')
+    assert.match(log, /delete-failed id=locked-entry/, `日志要记下失败条目：${log}`)
+    assert.match(log, /locked-entry/, '日志要带具体路径')
   } finally {
     if (holder) {
       const exited = holder.exitCode !== null ? Promise.resolve() : new Promise((resolve) => holder.once('exit', resolve))
       holder.kill()
       await exited
     }
+    cleanup(temp)
+  }
+})
+
+test('清空回收站：git 对象那种只读文件也能删掉，不被只读属性卡住', async () => {
+  const temp = makeTemp()
+  try {
+    const { managerRoot } = fixture(temp)
+    const trashRoot = join(managerRoot, 'trash')
+    const target = join(trashRoot, 'readonly-entry')
+    mkdirSync(join(target, '.git', 'objects', 'ab'), { recursive: true })
+    writeFileSync(join(target, 'SKILL.md'), '---\nname: readonly\n---\n', 'utf8')
+    writeFileSync(join(target, '.git', 'config'), 'x', 'utf8')
+    writeFileSync(join(target, '.git', 'objects', 'ab', 'cdef'), 'x', 'utf8')
+    // git 在 Windows 上会把对象文件设成只读；以前一把 rmSync 会因此整棵树失败。
+    for (const file of [join(target, '.git', 'config'), join(target, '.git', 'objects', 'ab', 'cdef')]) chmodSync(file, 0o444)
+    writeFileSync(
+      join(trashRoot, 'index.json'),
+      JSON.stringify([{ id: 'readonly-entry', name: 'readonly', dirName: 'readonly', kind: 'bundle', from: join(temp, 'skills', 'readonly', 'SKILL.md'), rootId: 'user-agents', at: '2026-01-01T00:00:00.000Z' }]),
+      'utf8',
+    )
+
+    const result = await purgeTrash({ managerRoot, retryDelays: [10] })
+    assert.equal(result.ok, true, result.error)
+    assert.equal(result.purged, 1)
+    assert.deepEqual(result.failed, [], `只读文件不该挡住删除：${JSON.stringify(result.failed)}`)
+    assert.equal(existsSync(target), false, '整棵树要删干净')
+    assert.equal(existsSync(join(managerRoot, 'delete.log')), false, '删成功就不该写失败日志')
+  } finally {
+    cleanup(temp)
+  }
+})
+
+test('清空回收站：占用只持续一会儿时，重试能等到它放开并删掉', { skip: process.platform !== 'win32' ? '只有 Windows 会把进程工作目录当成删除障碍' : false }, async () => {
+  const temp = makeTemp()
+  let holder
+  let exitPromise
+  try {
+    const { managerRoot } = fixture(temp)
+    const trashRoot = join(managerRoot, 'trash')
+    const target = join(trashRoot, 'transient-entry')
+    mkdirSync(join(target, 'inner'), { recursive: true })
+    writeFileSync(join(target, 'SKILL.md'), '---\nname: transient\n---\n', 'utf8')
+    writeFileSync(join(target, 'inner', 'note.md'), 'x', 'utf8')
+    writeFileSync(
+      join(trashRoot, 'index.json'),
+      JSON.stringify([{ id: 'transient-entry', name: 'transient', dirName: 'transient', kind: 'bundle', from: join(temp, 'skills', 'transient', 'SKILL.md'), rootId: 'user-agents', at: '2026-01-01T00:00:00.000Z' }]),
+      'utf8',
+    )
+    holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { cwd: join(target, 'inner'), stdio: 'ignore' })
+    // 子进程是 1.2 秒后自己被杀掉的，等 purge 返回时 exit 事件可能早就发生过了
+    // （被信号杀掉时 exitCode 仍是 null），所以一开始就挂监听，别在 finally 里补挂。
+    exitPromise = new Promise((resolve) => holder.once('exit', resolve))
+    await new Promise((resolve) => holder.once('spawn', resolve))
+    // 1.2 秒后把占用放掉；重试预算 0.2+0.4+0.8+1.6+3.0 秒足够等到这一刻。
+    setTimeout(() => holder.kill(), 1200)
+
+    const result = await purgeTrash({ managerRoot, retryDelays: [200, 400, 800, 1600, 3000] })
+    assert.equal(result.ok, true, result.error)
+    assert.equal(result.purged, 1, `占用放开后应该删成功：${JSON.stringify(result)}`)
+    assert.deepEqual(result.failed, [])
+    assert.equal(existsSync(target), false, '最后要删干净，不能留半截')
+  } finally {
+    holder?.kill()
+    if (exitPromise) await exitPromise
     cleanup(temp)
   }
 })
